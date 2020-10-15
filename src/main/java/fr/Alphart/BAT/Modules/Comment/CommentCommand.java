@@ -58,7 +58,7 @@ public class CommentCommand extends CommandHandler{
 			}
 			
 			checkArgument(comment.hasLastcommentCooledDown(args[0]), _("cooldownUnfinished"));
-			comment.insertComment(args[0], Utils.getFinalArg(args, 1), Type.NOTE, sender.getName());
+			comment.insertComment(args[0], Utils.getFinalArg(args, 1), Type.NOTE, sender.getName(), true);
 			sender.sendMessage(__("commentAdded"));
 		}
 	}
@@ -94,10 +94,12 @@ public class CommentCommand extends CommandHandler{
 				checkArgument(PermissionManager.canExecuteAction(Action.WARN , sender, ((ProxiedPlayer)sender).getServer().getInfo().getName()),
 						_("noPerm"));
 			}
-	          checkArgument(comment.hasLastcommentCooledDown(args[0]), _("cooldownUnfinished"));
-			comment.insertComment(args[0], reason, Type.WARNING, sender.getName());
+	    checkArgument(comment.hasLastcommentCooledDown(args[0]), _("cooldownUnfinished"));
 			if(target != null){
 			  target.sendMessage(__("wasWarnedNotif", new String[] {reason}));
+			  comment.insertComment(args[0], reason, Type.WARNING, sender.getName(), true);
+			} else {
+				comment.insertComment(args[0], reason, Type.WARNING, sender.getName(), false);
 			}
 			  
 			BAT.broadcast(_("warnBroadcast", new String[]{args[0], sender.getName(), reason}), Action.WARN_BROADCAST.getPermission());

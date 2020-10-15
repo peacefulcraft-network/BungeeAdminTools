@@ -13,10 +13,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
 
+import javax.sql.DataSource;
+
+import net.alpenblock.bungeeperms.platform.MessageEncoder.BaseComponent;
 import net.cubespace.Yamler.Config.InvalidConfigurationException;
+import net.md_5.bungee.api.ChatColor;
+import net.md_5.bungee.api.chat.ComponentBuilder;
+import net.md_5.bungee.api.connection.ProxiedPlayer;
+import net.md_5.bungee.api.event.LoginEvent;
+import net.md_5.bungee.api.event.PostLoginEvent;
+import net.md_5.bungee.api.plugin.Listener;
 import net.md_5.bungee.config.Configuration;
 import net.md_5.bungee.config.ConfigurationProvider;
 import net.md_5.bungee.config.YamlConfiguration;
+import net.md_5.bungee.event.EventHandler;
 
 import com.google.common.collect.Lists;
 
@@ -30,8 +40,9 @@ import fr.Alphart.BAT.Modules.Core.Core;
 import fr.Alphart.BAT.Utils.Utils;
 import fr.Alphart.BAT.database.DataSourceHandler;
 import fr.Alphart.BAT.database.SQLQueries;
+import fr.Alphart.BAT.database.SQLQueries.Comments;
 
-public class Comment implements IModule{
+public class Comment implements IModule, Listener{
 	private final String name = "comment";
 	private CommentCommand commandHandler;
 	private final CommentConfig config;
@@ -214,7 +225,7 @@ public class Comment implements IModule{
 		return notes;
 	}
 
-	public void insertComment(final String entity, final String comment, final Type type, final String author){
+	public void insertComment(final String entity, final String comment, final Type type, final String author, boolean notified){
 		PreparedStatement statement = null;
 		try (Connection conn = BAT.getConnection()) {
 			statement = conn.prepareStatement(SQLQueries.Comments.insertEntry);
@@ -222,6 +233,7 @@ public class Comment implements IModule{
 			statement.setString(2, comment);
 			statement.setString(3, type.name());
 			statement.setString(4, author);
+			statement.setBoolean(5, notified);
 			statement.executeUpdate();
 			statement.close();
 			
@@ -261,6 +273,65 @@ public class Comment implements IModule{
 		}
 	}
 	
+	@EventHandler
+	public void onPlayerLogin(final PostLoginEvent ev) {
+		BAT.getInstance().getProxy().getScheduler().runAsync(BAT.getInstance(), new Runnable() {
+			@Override
+			public void run() {
+				PreparedStatement statement = null;
+				ResultSet rs = null;
+
+				ProxiedPlayer p = ev.getPlayer();
+				String uuid = p.getUniqueId().toString().replaceAll("-", "");
+
+				try(Connection con = BAT.getConnection()) {
+					statement = con.prepareStatement(Comments.getNotifications);
+					statement.setString(1, uuid);
+					rs = statement.executeQuery();
+
+					if (!rs.last()) {
+							p.sendMessage(
+								new ComponentBuilder()
+									.color(ChatColor.RED).append("While you were offline, the following warnings were issued against your account:")
+									.create()
+							);
+
+						while(rs.next()) {
+							p.sendMessage(
+								new ComponentBuilder()
+									.color(ChatColor.RESET).append(rs.getString("note"))
+									.create()
+							);
+						}
+
+						p.sendMessage(
+							new ComponentBuilder()
+								.color(ChatColor.RED).append("If you believe these warnings were wrongly issued, you can appeal them at https://www.peacefulcraft.net/flarum.")
+								.create()
+						);
+						p.sendMessage(
+							new ComponentBuilder()
+								.color(ChatColor.RED).append("Continung to violate any of the server /rules will result in jail time, chat mute, tempban, or a perm ban.")
+								.create()
+						);
+					
+						statement.close();
+						statement = con.prepareStatement(Comments.markNotified);
+						statement.setString(1, uuid);
+						if (statement.executeUpdate() < 1) {
+							BAT.getInstance().getLogger().warning("Datastore failed to mark player warnings as read for user " + p.getName());
+						}
+					}
+
+				} catch(SQLException ex) {
+					DataSourceHandler.handleException(ex);
+				} finally {
+					DataSourceHandler.close(statement, rs);
+				}
+			}
+		});
+	}
+
 	/**
 	 * Clear all the comments and warning of an entity or the specified one
 	 * @param entity
